@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+
+parser = argparse.ArgumentParser(
+    prog="ssmscp-setup",
+    description="Set up SCP over an SSM connection. Must do `aws sso login` first and make sure `AWS_PROFILE` is "
+                "exported in your environment. You must have an SSH keypair already set up locally.",
+)
+parser.add_argument(
+    "-t", "--target", required=True, type=str, help="AWS EC2 instance ID"
+)
+parser.add_argument("-u", "--username", type=str, default="ubuntu", help="EC2 username")
+parser.add_argument(
+    "-k",
+    "--publickey",
+    type=str,
+    default="~/.ssh/id_rsa.pub",
+    help="SSH public key to use to configure the remote server",
+)
+
+args = parser.parse_args()
+
+target, username, publickey = args.target, args.username, args.publickey
+
+with open(os.path.expanduser(publickey), "r") as keyfile:
+    keydata = keyfile.read()
+
+keycopyid = (
+    subprocess.check_output(
+        [
+            "aws",
+            "ssm",
+            "send-command",
+            "--instance-ids",
+            target,
+            "--document-name",
+            "AWS-RunShellScript",
+            "--comment",
+            "SSM SCP setup",
+            "--parameters",
+            json.dumps(
+                {
+                    "commands": [
+                        f"sudo su - {username} -c \"echo '{keydata}' >> ~/.ssh/authorized_keys\"",
+                    ]
+                }
+            ),
+            "--output",
+            "text",
+            "--query",
+            "Command.CommandId",
+        ]
+    )
+    .decode()
+    .strip()
+)
+
+completed = False
+while not completed:
+    keycopystatus = (
+        subprocess.check_output(
+            [
+                "aws",
+                "ssm",
+                "list-command-invocations",
+                "--command-id",
+                keycopyid,
+                "--output",
+                "text",
+                "--query",
+                "CommandInvocations[0].Status",
+            ]
+        )
+        .decode()
+        .strip()
+    )
+    if keycopystatus == "Success":
+        print(f"Successfully configured {target}", file=sys.stderr)
+        completed = True
+    elif keycopystatus == "Failed":
+        print("Failed to copy key", file=sys.stderr)
+        keycopyerror = (
+            subprocess.check_output(
+                [
+                    "aws",
+                    "ssm",
+                    "list-command-invocations",
+                    "--command-id",
+                    keycopyid,
+                    "--detail",
+                    "--output",
+                    "text",
+                    "--query",
+                    "CommandInvocations[0].CommandPlugins[0].Output",
+                ]
+            )
+            .decode()
+            .strip()
+        )
+        print(keycopyerror, file=sys.stderr)
+        exit(1)
+    else:
+        time.sleep(2)

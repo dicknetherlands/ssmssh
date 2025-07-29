@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+
+parser = argparse.ArgumentParser(
+    prog="ssmscp",
+    description="Perform SCP over an SSM connection that has previously been set up with `ssmscp-setup`. "
+    "Must do `aws sso login` first and make sure `AWS_PROFILE` is exported in your environment. "
+    "Use `ubuntu@i-012345678:/path` to refer to paths on the remote host, where `i-012345678` "
+    "is the EC2 instance ID, and `ubuntu` is the username you configured for this host with "
+    "`ssmscp-setup`. This command can only be used for copying files local-to-instance or "
+    "instance-to-local, it cannot have both source and destination as instance IDs.",
+)
+parser.add_argument(
+    "-P", "--port", type=int, default=1234, help="Local port number to use"
+)
+parser.add_argument(
+    "-i",
+    "--privatekey",
+    type=str,
+    default="~/.ssh/id_rsa",
+    help="SSH private key to connect with",
+)
+
+args, scpargs = parser.parse_known_args()
+
+port, privatekey = args.port, args.privatekey
+
+targetmatch = re.compile(r"\S+@(i-[a-f0-9]{8,17}):.*")
+targetarg = list(filter(targetmatch.match, scpargs))
+if len(targetarg) != 1:
+    print(
+        "Did not find exactly one instance ID in source or destination", file=sys.stderr
+    )
+    exit(1)
+target = targetmatch.match(targetarg[0])
+targetid = target.group(1)
+targetscp_orig = target.group(0)
+targetscp_local = target.group(0).replace(targetid, "localhost")
+scpargs[scpargs.index(targetscp_orig)] = targetscp_local
+
+ssmproc = subprocess.Popen(
+    [
+        "aws",
+        "ssm",
+        "start-session",
+        "--target",
+        targetid,
+        "--document-name",
+        "AWS-StartPortForwardingSession",
+        "--parameters",
+        f'{{"portNumber":["22"],"localPortNumber":["{port}"]}}',
+    ],
+    start_new_session=True,
+)
+time.sleep(5)  # wait for SSM port to open
+
+subprocess.run(
+    [
+        "scp",
+        "-P",
+        str(port),
+        "-i",
+        privatekey,
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        *scpargs,
+    ]
+)
+
+os.killpg(os.getpgid(ssmproc.pid), signal.SIGTERM)
