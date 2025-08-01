@@ -6,7 +6,7 @@ To run these commands you will need:
 
   1. Python3 installed on your local machine
   2. The AWS CLI (to use for `aws sso login`, etc.) installed and 
-     an AWS SSO profile set up with the correct permissions to 
+     AWS credentials with the correct permissions to 
      access the EC2 instance you want to copy files to/from
   3. An SSH public/private key pair. Your default pair at
      `~/.ssh/id_rsa` is fine. Use `ssh-keygen` to create one if  
@@ -23,13 +23,11 @@ things like X forwarding and any other standard SSH operations.
 
 You only need to set this up once per EC2 instance, per machine
 that you want to copy data to/from, e.g. your laptop. It needs to
-be done by each user intending to use `ssmscp`. Once set up
+be done by each user intending to use this tool. Once set up
 it remains so permanently and you can go straight to step 2 
 next time.
 
-1. `export AWS_PROFILE=myssoprofile`
-2. `aws sso login`
-3. `./ssmssh-setup --target <instance-id>`
+`./ssmssh-setup --target <instance-id>`
 
 It will use your default SSH public key, `~/.ssh/id_rsa.pub`. If you 
 want to use a different key, you can specify it with `--publickey`
@@ -41,9 +39,7 @@ or `-u`.
 
 ## Step 2: Copy files to the EC2 instance using SCP!
 
-1. `export AWS_PROFILE=myssoprofile`
-2. `aws sso login`
-3. `./ssmscp <source> <dest>`
+`./ssmscp <source> <dest>`
 
 **Either `source` or `dest` must be in the form of
 `ubuntu@i-012345678:/path/to/file`, where `i-012345678` is your EC2
@@ -63,9 +59,7 @@ the public key you used with `ssmssh-setup` in Step 1 above.
 
 # Step 3: SSH to the EC2 instance using SSM!
 
-1. `export AWS_PROFILE=myssoprofile`
-2. `aws sso login`
-3. `./ssmssh ubuntu@<instanceid>`
+`./ssmssh ubuntu@<instanceid>`
 
 where instanceid is e.g. `i-0123456578`.
 
